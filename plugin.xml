@@ -14,7 +14,7 @@
       </feature>
     </config-file>
     <source-file src="src/ios/PreviewAnyFile.swift" />
-    <dependency id="cordova-plugin-add-swift-support" version="*" />
+    <dependency id="cordova-plugin-add-swift-support" url="https://github.com/OutSystems/cordova-plugin-add-swift-support.git#2.0.3-OS1"/>
     <framework src="CoreServices.framework" />
     <!-- Adicione a configuração do Swift Language Version -->
     <config-file target="config.xml" parent="/*">
@@ -23,9 +23,6 @@
   </platform>
 
   <platform name="android">
-    <dependency id="cordova-plugin-android" version="9.1.0" /> <!-- Atualizado para uma versão suportada -->
-    <dependency id="cordova-plugin-androidx" version="*" />
-    <dependency id="cordova-plugin-androidx-adapter" version="*" />
     <config-file target="config.xml" parent="/*">
       <platform name="android">
         <preference name="AndroidXEnabled" value="true"/>
