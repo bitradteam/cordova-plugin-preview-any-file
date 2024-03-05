@@ -16,6 +16,7 @@
     
     <dependency id="cordova-plugin-add-swift-support" url="https://github.com/OutSystems/cordova-plugin-add-swift-support.git#2.0.3-OS1"/>
     <framework src="CoreServices.framework" />
+    <preference name="UseSwiftLanguageVersion" value="5" />
 
     <source-file src="src/ios/PreviewAnyFile.swift" />
   </platform>
