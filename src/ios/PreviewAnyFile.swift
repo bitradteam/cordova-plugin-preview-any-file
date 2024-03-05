@@ -3,142 +3,149 @@ import CoreServices
 
 @objc(HWPPreviewAnyFile)
 class PreviewAnyFile: CDVPlugin {
-    var previewItem: NSURL?
-    var tempCommandId: String?
+    lazy var previewItem = NSURL()
+    var tempCommandId = ""
 
     @objc(preview:)
     func preview(_ command: CDVInvokedUrlCommand) {
-        guard let myUrl = command.arguments[0] as? String else {
-            sendErrorResult(message: "Invalid URL", command: command)
+        tempCommandId = command.callbackId
+
+        guard let myUrl = command.arguments.first as? String else {
+            sendErrorResult("Missing URL", command.callbackId)
             return
         }
 
-        tempCommandId = command.callbackId
-
-        downloadFile(withName: myUrl, fileName: "") { success, fileLocationURL, callback in
+        downloadFile(withName: myUrl, fileName: "") { success, fileLocationURL, error in
             if success {
-                self.previewItem = fileLocationURL as NSURL?
-
-                DispatchQueue.main.async {
-                    let previewController = QLPreviewController()
-                    previewController.dataSource = self
-                    previewController.delegate = self
-                    self.viewController?.present(previewController, animated: true, completion: nil)
-
-                    let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "SUCCESS")
-                    pluginResult?.keepCallback = true
-                    self.commandDelegate?.send(pluginResult, callbackId: command.callbackId)
-                }
+                self.showPreview(with: fileLocationURL)
             } else {
-                self.sendErrorResult(message: callback?.localizedDescription ?? "Unknown error", command: command)
+                self.sendErrorResult(error?.localizedDescription ?? "Failed to download file", command.callbackId)
             }
         }
     }
 
     @objc(previewPath:)
     func previewPath(_ command: CDVInvokedUrlCommand) {
-        guard let myUrl = command.arguments[0] as? String else {
-            sendErrorResult(message: "Invalid URL", command: command)
+        tempCommandId = command.callbackId
+
+        guard let myUrl = command.arguments.first as? String else {
+            sendErrorResult("Missing URL", command.callbackId)
             return
         }
-        
-        let fileName = command.arguments[1] as? String ?? ""
-        
-        downloadFile(withName: myUrl, fileName: fileName) { success, fileLocationURL, callback in
+
+        let name = command.arguments[1] as? String ?? ""
+        let mimeType = command.arguments[2] as? String ?? ""
+
+        var fileName = name.isEmpty ? "" : name
+
+        if mimeType.isEmpty {
+            let uti = UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, mimeType as CFString, nil)
+            if let ext = UTTypeCopyPreferredTagWithClass(uti!.takeRetainedValue(), kUTTagClassFilenameExtension)?.takeRetainedValue() as? String {
+                fileName = "file.\(ext)"
+            }
+        }
+
+        downloadFile(withName: myUrl, fileName: fileName) { success, fileLocationURL, error in
             if success {
-                self.previewItem = fileLocationURL as NSURL?
-                
-                DispatchQueue.main.async {
-                    let previewController = QLPreviewController()
-                    previewController.dataSource = self
-                    previewController.delegate = self
-                    self.viewController?.present(previewController, animated: true, completion: nil)
-                    
-                    let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "SUCCESS")
-                    pluginResult?.keepCallback = true
-                    self.commandDelegate?.send(pluginResult, callbackId: command.callbackId)
-                }
+                self.showPreview(with: fileLocationURL)
             } else {
-                self.sendErrorResult(message: callback?.localizedDescription ?? "Unknown error", command: command)
+                self.sendErrorResult(error?.localizedDescription ?? "Failed to download file", command.callbackId)
             }
         }
     }
 
     @objc(previewBase64:)
     func previewBase64(_ command: CDVInvokedUrlCommand) {
-        guard let base64String = command.arguments[0] as? String else {
-            sendErrorResult(message: "Invalid Base64 string", command: command)
+        tempCommandId = command.callbackId
+
+        guard let base64String = command.arguments.first as? String else {
+            sendErrorResult("No Base64 code found", command.callbackId)
             return
         }
-        
-        let mimeType = command.arguments[2] as? String ?? ""
-        let fileName = command.arguments[1] as? String ?? ""
-        
-        // Decode Base64 string and write to file
-        
+
+        guard let mimeType = command.arguments[2] as? String, !mimeType.isEmpty else {
+            sendErrorResult("You must define MIME type", command.callbackId)
+            return
+        }
+
+        let name = command.arguments[1] as? String ?? ""
+        var fileName = name.isEmpty ? "" : name
+
+        let uti = UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, mimeType as CFString, nil)
+        if let ext = UTTypeCopyPreferredTagWithClass(uti!.takeRetainedValue(), kUTTagClassFilenameExtension)?.takeRetainedValue() as? String {
+            fileName = "file.\(ext)"
+        }
+
+        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last else {
+            sendErrorResult("Failed to get documents URL", command.callbackId)
+            return
+        }
+
+        let fileURL = documentsURL.appendingPathComponent(fileName)
+
         guard let data = Data(base64Encoded: base64String) else {
-            sendErrorResult(message: "Invalid Base64 string", command: command)
+            sendErrorResult("Invalid Base64 data", command.callbackId)
             return
         }
-        
-        let documentsDirectoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let fileURL = documentsDirectoryURL.appendingPathComponent(fileName)
-        
+
         do {
             try data.write(to: fileURL)
-            self.previewItem = fileURL as NSURL?
-            
-            DispatchQueue.main.async {
-                let previewController = QLPreviewController()
-                previewController.dataSource = self
-                previewController.delegate = self
-                self.viewController?.present(previewController, animated: true, completion: nil)
-                
-                let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "SUCCESS")
-                pluginResult?.keepCallback = true
-                self.commandDelegate?.send(pluginResult, callbackId: command.callbackId)
-            }
+            showPreview(with: fileURL)
         } catch {
-            sendErrorResult(message: error.localizedDescription, command: command)
+            sendErrorResult("Failed to write Base64 data", command.callbackId)
         }
     }
 
-    func downloadFile(withName myUrl: String, fileName: String, completion: @escaping (_ success: Bool, _ fileLocation: URL?, _ callback: NSError?) -> Void) {
-        // Implement downloadFile function here...
-        guard let url = URL(string: myUrl) else {
-            completion(false, nil, NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"]))
+    private func downloadFile(withName myUrl: String, fileName: String, completion: @escaping (Bool, URL?, Error?) -> Void) {
+        guard let itemUrl = URL(string: myUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!) else {
+            completion(false, nil, NSError(domain: "Invalid URL", code: -1, userInfo: nil))
             return
         }
-        
-        let task = URLSession.shared.downloadTask(with: url) { (location, response, error) in
-            guard let tempLocation = location, error == nil else {
-                completion(false, nil, error as NSError?)
+
+        let documentsDirectoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let destinationURL = documentsDirectoryURL.appendingPathComponent(fileName.isEmpty ? itemUrl.lastPathComponent : fileName)
+
+        let downloadTask = URLSession.shared.downloadTask(with: itemUrl) { (location, response, error) in
+            if let error = error {
+                completion(false, nil, error)
                 return
             }
-            
-            let documentsDirectoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            let destinationURL = documentsDirectoryURL.appendingPathComponent(fileName.isEmpty ? url.lastPathComponent : fileName)
-            
+
+            guard let tempLocation = location else {
+                completion(false, nil, NSError(domain: "Invalid location", code: -1, userInfo: nil))
+                return
+            }
+
             do {
                 try FileManager.default.moveItem(at: tempLocation, to: destinationURL)
                 completion(true, destinationURL, nil)
             } catch {
-                completion(false, nil, error as NSError?)
+                completion(false, nil, error)
             }
         }
-        
-        task.resume()
+
+        downloadTask.resume()
     }
 
-    func dismissPreviewCallback() {
-        print(tempCommandId ?? "")
-        let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "CLOSING")
-        self.commandDelegate?.send(pluginResult, callbackId: tempCommandId)
+    private func showPreview(with fileLocationURL: URL?) {
+        guard let fileLocationURL = fileLocationURL else {
+            sendErrorResult("Failed to open file", tempCommandId)
+            return
+        }
+
+        previewItem = fileLocationURL as NSURL
+
+        DispatchQueue.main.async {
+            let previewController = QLPreviewController()
+            previewController.dataSource = self
+            previewController.delegate = self
+            self.viewController?.present(previewController, animated: true, completion: nil)
+        }
     }
 
-    private func sendErrorResult(message: String, command: CDVInvokedUrlCommand) {
-        let pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: message)
-        self.commandDelegate?.send(pluginResult, callbackId: command.callbackId)
+    private func sendErrorResult(_ message: String, _ callbackId: String) {
+        let pluginResult = CDVPluginResult(status: .ERROR, messageAs: message)
+        commandDelegate?.send(pluginResult, callbackId: callbackId)
     }
 }
 
@@ -148,10 +155,15 @@ extension PreviewAnyFile: QLPreviewControllerDataSource, QLPreviewControllerDele
     }
 
     func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-        return self.previewItem ?? NSURL()
+        return previewItem as QLPreviewItem
     }
 
     func previewControllerWillDismiss(_ controller: QLPreviewController) {
-        self.dismissPreviewCallback()
+        dismissPreviewCallback()
+    }
+
+    private func dismissPreviewCallback() {
+        let pluginResult = CDVPluginResult(status: .OK, messageAs: "CLOSING")
+        commandDelegate?.send(pluginResult, callbackId: tempCommandId)
     }
 }
