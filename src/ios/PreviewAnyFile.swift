@@ -4,22 +4,25 @@ import CoreServices
 @objc(HWPPreviewAnyFile)
 class PreviewAnyFile: CDVPlugin {
     lazy var previewItem = NSURL()
-    var tempCommandId = ""
+    var tempCommandId = String()
 
     @objc(preview:)
     func preview(_ command: CDVInvokedUrlCommand) {
         tempCommandId = command.callbackId
 
         guard let myUrl = command.arguments.first as? String else {
-            sendErrorResult("Missing URL", command.callbackId)
+            sendErrorPluginResult("Invalid file URL", command.callbackId)
             return
         }
 
         downloadFile(withName: myUrl, fileName: "") { success, fileLocationURL, error in
-            if success {
-                self.showPreview(with: fileLocationURL)
+            if success, let fileLocation = fileLocationURL {
+                self.previewItem = fileLocation as NSURL
+                DispatchQueue.main.async {
+                    self.presentPreviewController()
+                }
             } else {
-                self.sendErrorResult(error?.localizedDescription ?? "Failed to download file", command.callbackId)
+                self.sendErrorPluginResult(error?.localizedDescription ?? "Failed to download file", command.callbackId)
             }
         }
     }
@@ -29,122 +32,122 @@ class PreviewAnyFile: CDVPlugin {
         tempCommandId = command.callbackId
 
         guard let myUrl = command.arguments.first as? String else {
-            sendErrorResult("Missing URL", command.callbackId)
+            sendErrorPluginResult("Invalid file URL", command.callbackId)
             return
         }
 
-        let name = command.arguments[1] as? String ?? ""
-        let mimeType = command.arguments[2] as? String ?? ""
+        // Additional arguments handling...
 
-        var fileName = name.isEmpty ? "" : name
-
-        if mimeType.isEmpty {
-            let uti = UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, mimeType as CFString, nil)
-            if let ext = UTTypeCopyPreferredTagWithClass(uti!.takeRetainedValue(), kUTTagClassFilenameExtension)?.takeRetainedValue() as? String {
-                fileName = "file.\(ext)"
-            }
-        }
-
-        downloadFile(withName: myUrl, fileName: fileName) { success, fileLocationURL, error in
-            if success {
-                self.showPreview(with: fileLocationURL)
+        downloadFile(withName: myUrl, fileName: "") { success, fileLocationURL, error in
+            if success, let fileLocation = fileLocationURL {
+                self.previewItem = fileLocation as NSURL
+                DispatchQueue.main.async {
+                    self.presentPreviewController()
+                }
             } else {
-                self.sendErrorResult(error?.localizedDescription ?? "Failed to download file", command.callbackId)
+                self.sendErrorPluginResult(error?.localizedDescription ?? "Failed to download file", command.callbackId)
             }
         }
     }
 
     @objc(previewBase64:)
     func previewBase64(_ command: CDVInvokedUrlCommand) {
+        var pluginResult = CDVPluginResult(
+            status: CDVCommandStatus_ERROR
+        )
         tempCommandId = command.callbackId
-
-        guard let base64String = command.arguments.first as? String else {
-            sendErrorResult("No Base64 code found", command.callbackId)
+        var ext: String = ""
+        guard let base64String = command.arguments[0] as? String else {
+            sendErrorPluginResult("No Base64 code found", command.callbackId)
             return
         }
 
-        guard let mimeType = command.arguments[2] as? String, !mimeType.isEmpty else {
-            sendErrorResult("You must define MIME type", command.callbackId)
-            return
-        }
-
+        let mimeType = command.arguments[2] as? String ?? ""
         let name = command.arguments[1] as? String ?? ""
-        var fileName = name.isEmpty ? "" : name
 
-        let uti = UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, mimeType as CFString, nil)
-        if let ext = UTTypeCopyPreferredTagWithClass(uti!.takeRetainedValue(), kUTTagClassFilenameExtension)?.takeRetainedValue() as? String {
-            fileName = "file.\(ext)"
+        if base64String.isEmpty {
+            sendErrorPluginResult("No Base64 code found", command.callbackId)
+            return
+        } else if base64String.contains(";base64,") {
+            let baseTmp = base64String.components(separatedBy: ",")
+            let cleanMimeType = baseTmp[0].replacingOccurrences(of: "data:", with: "").replacingOccurrences(of: ";base64", with: "")
+            ext = UTTypeCopyPreferredTagWithClass(cleanMimeType as CFString, kUTTagClassFilenameExtension)?.takeRetainedValue() as? String ?? ""
         }
 
-        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last else {
-            sendErrorResult("Failed to get documents URL", command.callbackId)
+        let fileName = name.isEmpty ? "file.\(ext)" : name
+
+        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last,
+              let convertedData = Data(base64Encoded: base64String) else {
+            sendErrorPluginResult("Invalid base64 data", command.callbackId)
             return
         }
 
         let fileURL = documentsURL.appendingPathComponent(fileName)
 
-        guard let data = Data(base64Encoded: base64String) else {
-            sendErrorResult("Invalid Base64 data", command.callbackId)
-            return
-        }
-
         do {
-            try data.write(to: fileURL)
-            showPreview(with: fileURL)
+            try convertedData.write(to: fileURL)
+            downloadFile(withName: fileURL.absoluteString, fileName: fileName) { success, fileLocationURL, error in
+                if success, let fileLocation = fileLocationURL {
+                    self.previewItem = fileLocation as NSURL
+                    DispatchQueue.main.async {
+                        self.presentPreviewController()
+                    }
+                } else {
+                    self.sendErrorPluginResult(error?.localizedDescription ?? "Failed to download file", command.callbackId)
+                }
+            }
         } catch {
-            sendErrorResult("Failed to write Base64 data", command.callbackId)
+            sendErrorPluginResult("Failed to write base64 data", command.callbackId)
         }
     }
 
-    private func downloadFile(withName myUrl: String, fileName: String, completion: @escaping (Bool, URL?, Error?) -> Void) {
-        guard let itemUrl = URL(string: myUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!) else {
-            completion(false, nil, NSError(domain: "Invalid URL", code: -1, userInfo: nil))
+    func downloadFile(withName myUrl: String, fileName: String, completion: @escaping (_ success: Bool, _ fileLocation: URL?, _ error: Error?) -> Void) {
+        guard let itemUrl = URL(string: myUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "") else {
+            completion(false, nil, NSError(domain: "InvalidURL", code: 0, userInfo: nil))
             return
+        }
+
+        if FileManager.default.fileExists(atPath: itemUrl.path) {
+            if itemUrl.scheme == nil {
+                completion(true, itemUrl, nil)
+            }
+            return completion(true, itemUrl, nil)
         }
 
         let documentsDirectoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let destinationURL = documentsDirectoryURL.appendingPathComponent(fileName.isEmpty ? itemUrl.lastPathComponent : fileName)
+        let destinationUrl = documentsDirectoryURL.appendingPathComponent(fileName)
 
-        let downloadTask = URLSession.shared.downloadTask(with: itemUrl) { (location, response, error) in
-            if let error = error {
-                completion(false, nil, error)
-                return
-            }
-
-            guard let tempLocation = location else {
-                completion(false, nil, NSError(domain: "Invalid location", code: -1, userInfo: nil))
-                return
-            }
-
+        if FileManager.default.fileExists(atPath: destinationUrl.path) {
             do {
-                try FileManager.default.moveItem(at: tempLocation, to: destinationURL)
-                completion(true, destinationURL, nil)
-            } catch {
+                try FileManager.default.removeItem(at: destinationUrl)
+            } catch let error as NSError {
                 completion(false, nil, error)
             }
         }
-
+        let downloadTask = URLSession.shared.downloadTask(with: itemUrl) { location, _, error in
+            guard let tempLocation = location, error == nil else {
+                completion(false, nil, error)
+                return
+            }
+            do {
+                try FileManager.default.moveItem(at: tempLocation, to: destinationUrl)
+                completion(true, destinationUrl, nil)
+            } catch let error as NSError {
+                completion(false, nil, error)
+            }
+        }
         downloadTask.resume()
     }
 
-    private func showPreview(with fileLocationURL: URL?) {
-        guard let fileLocationURL = fileLocationURL else {
-            sendErrorResult("Failed to open file", tempCommandId)
-            return
-        }
-
-        previewItem = fileLocationURL as NSURL
-
-        DispatchQueue.main.async {
-            let previewController = QLPreviewController()
-            previewController.dataSource = self
-            previewController.delegate = self
-            self.viewController?.present(previewController, animated: true, completion: nil)
-        }
+    func presentPreviewController() {
+        let previewController = QLPreviewController()
+        previewController.dataSource = self
+        previewController.delegate = self
+        viewController?.present(previewController, animated: true, completion: nil)
     }
 
-    private func sendErrorResult(_ message: String, _ callbackId: String) {
-        let pluginResult = CDVPluginResult(status: .ERROR, messageAs: message)
+    func sendErrorPluginResult(_ errorMessage: String, _ callbackId: String) {
+        let pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: errorMessage)
         commandDelegate?.send(pluginResult, callbackId: callbackId)
     }
 }
@@ -155,15 +158,16 @@ extension PreviewAnyFile: QLPreviewControllerDataSource, QLPreviewControllerDele
     }
 
     func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-        return previewItem as QLPreviewItem
+        return self.previewItem as QLPreviewItem
     }
 
     func previewControllerWillDismiss(_ controller: QLPreviewController) {
         dismissPreviewCallback()
     }
 
-    private func dismissPreviewCallback() {
-        let pluginResult = CDVPluginResult(status: .OK, messageAs: "CLOSING")
+    func dismissPreviewCallback() {
+        print(tempCommandId)
+        let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "CLOSING")
         commandDelegate?.send(pluginResult, callbackId: tempCommandId)
     }
 }
