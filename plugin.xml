@@ -1,49 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-preview-any-file" version="0.2.9">
-    <name>Preview Any File</name>
-    <description>Cordova plugin to preview any file from any where in native mode</description>
-    <license>MIT</license>
-    <keywords>cordova,device,open file, base64,</keywords>
-    <js-module src="www/preview.js" name="PreviewAnyFile">
-        <clobbers target="window.PreviewAnyFile" />
-    </js-module>
-    <platform name="ios">
-        <config-file target="config.xml" parent="/*">
-            <feature name="PreviewAnyFile">
-                <param name="ios-package" value="HWPPreviewAnyFile"/>
-            </feature>
-        </config-file>
-        <source-file src="src/ios/PreviewAnyFile.swift" />
-        <dependency id="cordova-plugin-add-swift-support" version="*" />
-        <framework src="CoreServices.framework" />
-    </platform>
+  <name>Preview Any File</name>
+  <description>Cordova plugin to preview any file from any where in native mode</description>
+  <license>MIT</license>
+  <keywords>cordova,device,open file, base64,</keywords>
+  <js-module src="www/preview.js" name="PreviewAnyFile">
+    <clobbers target="window.PreviewAnyFile" />
+  </js-module>
+  <platform name="ios">
+    <config-file target="config.xml" parent="/*">
+      <feature name="PreviewAnyFile">
+        <param name="ios-package" value="HWPPreviewAnyFile"/>
+      </feature>
+    </config-file>
+    <source-file src="src/ios/PreviewAnyFile.swift" />
+    <dependency id="cordova-plugin-add-swift-support" version="*" />
+    <framework src="CoreServices.framework" />
+    <!-- Adicione a configuração do Swift Language Version -->
+    <config-file target="config.xml" parent="/*">
+      <preference name="SwiftLanguageVersion" value="5" />
+    </config-file>
+  </platform>
 
-    <platform name="android">
-        <dependency id="cordova-plugin-androidx" version="*" />
-        <dependency id="cordova-plugin-androidx-adapter" version="*" />
-        <config-file target="config.xml" parent="/*">
-            <platform name="android">
-                <preference name="AndroidXEnabled" value="true"/>
-            </platform>
-        </config-file>
-        <config-file target="res/xml/config.xml" parent="/*">
-            <feature name="PreviewAnyFile">
-                <param name="android-package" value="com.mostafa.previewanyfile.PreviewAnyFile"/>
-            </feature>
-        </config-file>
-        <config-file target="AndroidManifest.xml" parent="/*">
-            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-        </config-file>
-        <source-file src="src/android/PreviewAnyFile.java" target-dir="src/com/mostafa/previewanyfile" />
+  <platform name="android">
+    <dependency id="cordova-plugin-android" version="9.1.0" /> <!-- Atualizado para uma versão suportada -->
+    <dependency id="cordova-plugin-androidx" version="*" />
+    <dependency id="cordova-plugin-androidx-adapter" version="*" />
+    <config-file target="config.xml" parent="/*">
+      <platform name="android">
+        <preference name="AndroidXEnabled" value="true"/>
+      </platform>
+    </config-file>
+    <config-file target="res/xml/config.xml" parent="/*">
+      <feature name="PreviewAnyFile">
+        <param name="android-package" value="com.mostafa.previewanyfile.PreviewAnyFile"/>
+      </feature>
+    </config-file>
+    <config-file target="AndroidManifest.xml" parent="/*">
+      <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    </config-file>
+    <source-file src="src/android/PreviewAnyFile.java" target-dir="src/com/mostafa/previewanyfile" />
 
-        <config-file target="AndroidManifest.xml" parent="/manifest/application">
-            <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
-                <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
-            </provider>
-        </config-file>
-        <source-file src="src/android/xml/file_paths.xml" target-dir="res/xml"/>
+    <config-file target="AndroidManifest.xml" parent="/manifest/application">
+      <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
+        <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+      </provider>
+    </config-file>
+    <source-file src="src/android/xml/file_paths.xml" target-dir="res/xml"/>
 
-        <framework src="androidx.appcompat:appcompat:1.3.1" />
+    <framework src="androidx.appcompat:appcompat:1.3.1" />
 
-    </platform>
+  </platform>
 </plugin>
